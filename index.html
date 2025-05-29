@@ -83,16 +83,6 @@
         }).then(() => location.reload());
     }
 
-    function editItem(id) {
-        const newText = prompt('Введите новое название задачи:');
-        if (!newText || newText.trim() === '') return;
-
-        fetch(`/edit-item/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: newText.trim() })
-        }).then(() => location.reload());
-    }
 </script>
 
 </body>
