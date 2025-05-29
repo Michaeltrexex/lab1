@@ -28,7 +28,6 @@ async function getHtmlRows() {
       <td>${index + 1}</td>
       <td>${item.text}</td>
       <td>
-        <button onclick="editItem(${item.id})">Edit</button>
         <button onclick="deleteItem(${item.id})">Delete</button>
       </td>
     </tr>
