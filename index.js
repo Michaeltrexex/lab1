@@ -29,7 +29,6 @@ async function getHtmlRows() {
       <td>${item.text}</td>
       <td>
         <button onclick="editItem(${item.id})">Edit</button>
-        <button onclick="deleteItem(${item.id})">Delete</button>
       </td>
     </tr>
   `).join('');
@@ -42,11 +41,7 @@ async function addItemToDb(text) {
   return { id: result.insertId, text };
 }
 
-async function deleteItemFromDb(id) {
-  const connection = await mysql.createConnection(dbConfig);
-  await connection.execute('DELETE FROM items WHERE id = ?', [id]);
-  await connection.end();
-}
+
 
 async function updateItemInDb(id, newText) {
   const connection = await mysql.createConnection(dbConfig);
@@ -72,11 +67,6 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, item: result }));
     });
-  } else if (req.method === 'DELETE' && parsedUrl.pathname.startsWith('/delete-item/')) {
-    const id = parsedUrl.pathname.split('/').pop();
-    await deleteItemFromDb(id);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true }));
   } else if (req.method === 'PUT' && parsedUrl.pathname.startsWith('/edit-item/')) {
     const id = parsedUrl.pathname.split('/').pop();
     let body = '';
