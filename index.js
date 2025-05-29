@@ -48,11 +48,7 @@ async function deleteItemFromDb(id) {
   await connection.end();
 }
 
-async function updateItemInDb(id, newText) {
-  const connection = await mysql.createConnection(dbConfig);
-  await connection.execute('UPDATE items SET text = ? WHERE id = ?', [newText, id]);
-  await connection.end();
-}
+
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
@@ -77,16 +73,6 @@ const server = http.createServer(async (req, res) => {
     await deleteItemFromDb(id);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
-  } else if (req.method === 'PUT' && parsedUrl.pathname.startsWith('/edit-item/')) {
-    const id = parsedUrl.pathname.split('/').pop();
-    let body = '';
-    req.on('data', chunk => body += chunk);
-    req.on('end', async () => {
-      const { text } = JSON.parse(body);
-      await updateItemInDb(id, text);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true }));
-    });
   } else if (req.method === 'GET') {
     const filePath = path.join(__dirname, parsedUrl.pathname);
     if (fs.existsSync(filePath)) {
