@@ -7,7 +7,7 @@ from aiogram.filters import CommandStart
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-API_TOKEN = '7263777659:AAEoCu2MsnJDkGQDZPk3VHNoywf5Hu6Hoyg'
+API_TOKEN = ''
 
 # Логгирование
 logging.basicConfig(level=logging.INFO)
