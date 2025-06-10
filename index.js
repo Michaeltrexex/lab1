@@ -1,9 +1,9 @@
-
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 const url = require('url');
+const cookie = require('cookie');
 
 const PORT = 3000;
 
@@ -56,14 +56,56 @@ async function updateItemInDb(id, newText) {
 
 const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
+  const cookies = cookie.parse(req.headers.cookie || '');
+  const isLoggedIn = cookies.auth === 'admin';
+
+  // === LOGIN PAGE ===
+  if (req.method === 'GET' && parsedUrl.pathname === '/login') {
+    const loginPage = fs.readFileSync(path.join(__dirname, 'login.html'));
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    return res.end(loginPage);
+  }
+
+  if (req.method === 'POST' && parsedUrl.pathname === '/login') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const username = params.get('username');
+      const password = params.get('password');
+
+      if (username === 'admin' && password === 'admin') {
+        res.writeHead(302, {
+          'Set-Cookie': cookie.serialize('auth', 'admin', { httpOnly: true }),
+          'Location': '/'
+        });
+        return res.end();
+      } else {
+        res.writeHead(401);
+        return res.end('Unauthorized');
+      }
+    });
+    return;
+  }
+
+  // === AUTH CHECK ===
+  if (!isLoggedIn) {
+    res.writeHead(302, { Location: '/login' });
+    return res.end();
+  }
+
+  // === MAIN PAGE ===
   if (req.method === 'GET' && parsedUrl.pathname === '/') {
     const htmlPath = path.join(__dirname, 'index.html');
     let html = fs.readFileSync(htmlPath, 'utf8');
     const rows = await getHtmlRows();
     html = html.replace('{{rows}}', rows);
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html);
-  } else if (req.method === 'POST' && parsedUrl.pathname === '/add-item') {
+    return res.end(html);
+  }
+
+  // === ADD ITEM ===
+  if (req.method === 'POST' && parsedUrl.pathname === '/add-item') {
     let body = '';
     req.on('data', chunk => body += chunk);
     req.on('end', async () => {
@@ -72,12 +114,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, item: result }));
     });
-  } else if (req.method === 'DELETE' && parsedUrl.pathname.startsWith('/delete-item/')) {
+    return;
+  }
+
+  // === DELETE ITEM ===
+  if (req.method === 'DELETE' && parsedUrl.pathname.startsWith('/delete-item/')) {
     const id = parsedUrl.pathname.split('/').pop();
     await deleteItemFromDb(id);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true }));
-  } else if (req.method === 'PUT' && parsedUrl.pathname.startsWith('/edit-item/')) {
+    return res.end(JSON.stringify({ success: true }));
+  }
+
+  // === EDIT ITEM ===
+  if (req.method === 'PUT' && parsedUrl.pathname.startsWith('/edit-item/')) {
     const id = parsedUrl.pathname.split('/').pop();
     let body = '';
     req.on('data', chunk => body += chunk);
@@ -87,21 +136,23 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     });
-  } else if (req.method === 'GET') {
+    return;
+  }
+
+  // === STATIC FILES ===
+  if (req.method === 'GET') {
     const filePath = path.join(__dirname, parsedUrl.pathname);
     if (fs.existsSync(filePath)) {
       const ext = path.extname(filePath).toLowerCase();
       const contentType = ext === '.js' ? 'text/javascript' : 'text/plain';
       res.writeHead(200, { 'Content-Type': contentType });
-      res.end(fs.readFileSync(filePath));
-    } else {
-      res.writeHead(404);
-      res.end('Not Found');
+      return res.end(fs.readFileSync(filePath));
     }
-  } else {
-    res.writeHead(404);
-    res.end('Not Found');
   }
+
+  // === 404 ===
+  res.writeHead(404);
+  res.end('Not Found');
 });
 
 server.listen(PORT, () => {
