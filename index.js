@@ -14,7 +14,11 @@ const dbConfig = {
   database: process.env.MYSQLDATABASE,
   port: process.env.MYSQLPORT,
 };
-console.log('DB_MYSQLHOST:', process.env.MYSQLHOST);
+console.log('MYSQLHOST:', process.env.MYSQLHOST);
+console.log('MYSQLUSER:', process.env.MYSQLUSER);
+console.log('MYSQLPASSWORD:', process.env.MYSQLPASSWORD);
+console.log('MYSQLDATABASE:', process.env.MYSQLDATABASE);
+console.log('MYSQLPORT:', process.env.MYSQLPORT);
 async function retrieveListItems() {
   const connection = await mysql.createConnection(dbConfig);
   const [rows] = await connection.execute('SELECT id, text FROM items');
