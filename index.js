@@ -5,8 +5,9 @@ const mysql = require('mysql2/promise');
 const url = require('url');
 const cookie = require('cookie');
 
-const PORT = 3000;
 require('dotenv').config();
+const PORT = 3000;
+
 const dbConfig = {
   host: process.env.MYSQLHOST,
   user: process.env.MYSQLUSER,
