@@ -1,7 +1,8 @@
 {
   "dependencies": {
     "mysql2": "^3.14.0",
-    "cookie": "^1.0.2"
+    "cookie": "^1.0.2",
+    "dotenv": "^16.3.1" 
   },
   "scripts": {
     "start": "node index.js"
