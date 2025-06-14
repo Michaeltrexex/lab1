@@ -8,11 +8,11 @@ const cookie = require('cookie');
 const PORT = 3000;
 require('dotenv').config();
 const dbConfig = {
-  host: process.env.DB_MYSQLHOST,
-  user: process.env.DB_MYSQLUSER,
-  password: process.env.DB_MYSQLPASSWORD,
-  database: process.env.DB_MYSQLDATABASE,
-  port: process.env.DB_MYSQLPORT,
+  host: process.env.MYSQLHOST,
+  user: process.env.MYSQLUSER,
+  password: process.env.MYSQLPASSWORD,
+  database: process.env.MYSQLDATABASE,
+  port: process.env.MYSQLPORT,
 };
 console.log('DB_HOST:', process.env.DB_HOST);
 async function retrieveListItems() {
