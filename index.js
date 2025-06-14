@@ -6,7 +6,7 @@ const url = require('url');
 const cookie = require('cookie');
 
 const PORT = 3000;
-
+require('dotenv').config();
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
