@@ -1,0 +1,936 @@
+ЗАПРОС:
+есть готовый репозиторий с работающим проектом (сайт, на котором пользователь вводит задачи в список задач todolist, и также у него есть опции изменить задачу, удалить задачу и добавить новую), нужны дописать код с этими функциями, чтобы код работал локально. Код должен быть написан на JS, опирайся на приложенный файл.
+Также допиши в коде связь с базой данных на mysql, которая также будет запущена локально. Выбранная таблица для БД - todolist,с полями items и text. Юзер и пароль для БД должны быть root root12.
+ОТВЕТ:
+Вот что мне удалось написать для index.js
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const mysql = require('mysql2/promise');
+const url = require('url');
+const cookie = require('cookie');
+
+const PORT = 3000;
+
+const dbConfig = {
+  host: 'localhost',
+  user: 'root',
+  password: 'root12',
+  database: 'todolist',
+};
+
+async function retrieveListItems() {
+  const connection = await mysql.createConnection(dbConfig);
+  const [rows] = await connection.execute('SELECT id, text FROM items');
+  await connection.end();
+  return rows;
+}
+
+async function getHtmlRows() {
+  const rows = await retrieveListItems();
+  return rows.map((item, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${item.text}</td>
+      <td>
+        <button onclick="editItem(${item.id})">Edit</button>
+        <button onclick="deleteItem(${item.id})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function addItemToDb(text) {
+  const connection = await mysql.createConnection(dbConfig);
+  const [result] = await connection.execute('INSERT INTO items (text) VALUES (?)', [text]);
+  await connection.end();
+  return { id: result.insertId, text };
+}
+
+async function deleteItemFromDb(id) {
+  const connection = await mysql.createConnection(dbConfig);
+  await connection.execute('DELETE FROM items WHERE id = ?', [id]);
+  await connection.end();
+}
+
+async function updateItemInDb(id, newText) {
+  const connection = await mysql.createConnection(dbConfig);
+  await connection.execute('UPDATE items SET text = ? WHERE id = ?', [newText, id]);
+  await connection.end();
+}
+
+const server = http.createServer(async (req, res) => {
+  const parsedUrl = url.parse(req.url, true);
+  const cookies = cookie.parse(req.headers.cookie || '');
+  const isLoggedIn = cookies.auth === 'admin';
+
+  // === LOGIN PAGE ===
+  if (req.method === 'GET' && parsedUrl.pathname === '/login') {
+    const loginPage = fs.readFileSync(path.join(__dirname, 'login.html'));
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    return res.end(loginPage);
+  }
+
+  if (req.method === 'POST' && parsedUrl.pathname === '/login') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      const params = new URLSearchParams(body);
+      const username = params.get('username');
+      const password = params.get('password');
+
+      if (username === 'admin' && password === 'admin') {
+        res.writeHead(302, {
+          'Set-Cookie': cookie.serialize('auth', 'admin', { httpOnly: true }),
+          'Location': '/'
+        });
+        return res.end();
+      } else {
+        res.writeHead(401);
+        return res.end('Unauthorized');
+      }
+    });
+    return;
+  }
+
+  // === AUTH CHECK ===
+  if (!isLoggedIn) {
+    res.writeHead(302, { Location: '/login' });
+    return res.end();
+  }
+
+  // === MAIN PAGE ===
+  if (req.method === 'GET' && parsedUrl.pathname === '/') {
+    const htmlPath = path.join(__dirname, 'index.html');
+    let html = fs.readFileSync(htmlPath, 'utf8');
+    const rows = await getHtmlRows();
+    html = html.replace('{{rows}}', rows);
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    return res.end(html);
+  }
+
+  // === ADD ITEM ===
+  if (req.method === 'POST' && parsedUrl.pathname === '/add-item') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      const { text } = JSON.parse(body);
+      const result = await addItemToDb(text);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, item: result }));
+    });
+    return;
+  }
+
+  // === DELETE ITEM ===
+  if (req.method === 'DELETE' && parsedUrl.pathname.startsWith('/delete-item/')) {
+    const id = parsedUrl.pathname.split('/').pop();
+    await deleteItemFromDb(id);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ success: true }));
+  }
+
+  // === EDIT ITEM ===
+  if (req.method === 'PUT' && parsedUrl.pathname.startsWith('/edit-item/')) {
+    const id = parsedUrl.pathname.split('/').pop();
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      const { text } = JSON.parse(body);
+      await updateItemInDb(id, text);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    });
+    return;
+  }
+
+  // === STATIC FILES ===
+  if (req.method === 'GET') {
+    const filePath = path.join(__dirname, parsedUrl.pathname);
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = ext === '.js' ? 'text/javascript' : 'text/plain';
+      res.writeHead(200, { 'Content-Type': contentType });
+      return res.end(fs.readFileSync(filePath));
+    }
+  }
+
+  // === 404 ===
+  res.writeHead(404);
+  res.end('Not Found');
+});
+
+server.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
+ЗАПРОС:
+Супер! Также напиши учитывая все функции html разметку для страницы todolist
+ОТВЕТ:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>To-Do List</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #todoList {
+            border-collapse: collapse;
+            width: 70%;
+            margin: 0 auto;
+        }
+        #todoList th, #todoList td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        #todoList th {
+            background-color: #f0f0f0;
+        }
+        #todoList th:first-child, #todoList th:last-child {
+            width: 5%;
+        }
+        #todoList th:nth-child(2) {
+            width: 90%;
+        }
+        .add-form {
+            margin-top: 20px;
+            width: 70%;
+            margin: 20px auto;
+        }
+        .add-form input[type="text"] {
+            padding: 8px;
+            width: 70%;
+        }
+        .add-form button {
+            padding: 8px;
+            width: 20%;
+        }
+    </style>
+</head>
+<body>
+
+<h2 style="text-align: center;">To-Do List</h2>
+
+<table id="todoList">
+    <thead>
+        <tr>
+            <th>#</th>
+            <th>Task</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="listBody">
+        {{rows}}
+    </tbody>
+</table>
+
+<div class="add-form">
+    <input type="text" id="newItem" placeholder="Enter new item">
+    <button onclick="addItem()">Add</button>
+</div>
+
+<script>
+    function addItem() {
+        const input = document.getElementById('newItem');
+        const text = input.value.trim();
+        if (!text) return;
+
+        fetch('/add-item', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        }).then(() => location.reload());
+    }
+
+    function deleteItem(id) {
+        fetch(`/delete-item/${id}`, {
+            method: 'DELETE'
+        }).then(() => location.reload());
+    }
+
+    function editItem(id) {
+        const newText = prompt('Введите новое название задачи:');
+        if (!newText || newText.trim() === '') return;
+
+        fetch(`/edit-item/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: newText.trim() })
+        }).then(() => location.reload());
+    }
+</script>
+
+</body>
+</html>
+ЗАПРОС
+Сделай также файл конфигурацию для mysql (db.sql)
+ОТВЕТ
+
+USE todolist;
+
+CREATE TABLE items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    text VARCHAR(255) NOT NULL
+);
+ЗАПРОС
+Сгенерируй мне package.json файл для запуска моего проекта
+ОТВЕТ
+{
+  "dependencies": {
+    "mysql2": "^3.14.0",
+    "cookie": "^1.0.2",
+    "dotenv": "^16.3.1" 
+  },
+  "scripts": {
+    "start": "node index.js"
+  }
+}
+ЗАПРОС
+Как мне запустить проект main 
+У меня уже есть проект на рабочем столе 
+Я хочу его запустить , всё находится в папке OP GIT
+Я хочу запустить проект на своем локальном порту (веб интерфейс) и параллельно открыть базу данных через терминал чтоб видеть изменения не только в веб интерфейсе
+ОТВЕТ
+ Шаг 1: Запустить MySQL
+Откройте терминал и выполните:
+
+bash
+Копировать
+Редактировать
+mysql -u root -p
+Замените root на своё имя пользователя, если оно другое.
+Введите пароль, когда MySQL попросит.
+
+✅ Шаг 2: Создать базу данных
+После входа в MySQL:
+
+sql
+Копировать
+Редактировать
+CREATE DATABASE vibe2025_db;
+EXIT;
+✅ Шаг 3: Импортировать db.sql в базу
+Перейдите в папку проекта в терминале:
+
+bash
+Копировать
+Редактировать
+cd "C:\Users\<ваш_пользователь>\Desktop\OP git\vibe2025"
+Затем выполните:
+
+bash
+Копировать
+Редактировать
+mysql -u root -p vibe2025_db < db.sql
+Это зальёт структуру и данные из db.sql в MySQL.
+
+✅ Шаг 4: Подключить проект к MySQL
+Откройте файл index.js и проверьте, используется ли подключение к БД. Если там SQLite, его нужно заменить на MySQL. Пример подключения к MySQL через Node.js:
+
+Установка драйвера:
+bash
+Копировать
+Редактировать
+npm install mysql2
+Пример кода (index.js):
+js
+Копировать
+Редактировать
+const mysql = require('mysql2');
+
+const connection = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'ВАШ_ПАРОЛЬ',
+  database: 'vibe2025_db'
+});
+
+connection.connect(err => {
+  if (err) throw err;
+  console.log('Connected to MySQL');
+});
+✅ Шаг 5: Запустить проект
+После корректной настройки БД:
+
+bash
+Копировать
+Редактировать
+node index.js
+Если всё сделано правильно, вы увидите сообщение вроде:
+
+arduino
+Копировать
+Редактировать
+Connected to MySQL
+Server running on http://localhost:3000
+Откройте в браузере: http://localhost:3000
+
+✅ Шаг 6: Проверка изменений через терминал
+Подключитесь снова к базе:
+
+bash
+Копировать
+Редактировать
+mysql -u root -p
+Затем:
+
+sql
+Копировать
+Редактировать
+USE vibe2025_db;
+SELECT * FROM <ваша_таблица>;
+Вы будете видеть изменения в режиме реального времени при взаимодействии с веб-интерфейсом.
+
+🔧 Если не уверены, как именно изменить index.js под MySQL — покажите его содержимое, и я помогу адаптировать под вашу базу.
+ЗАПРОС
+Мне нужно к моему проекту дописать легкую авторизацию на сайте для пользователя, типа как ввод логина и пароля (логин и пароль дефолтные - admin admin), страница авторизации должна появляться до страницы с todolist.
+Также нужно чтобы был сделан бот в телеграмме на питоне, функция которого дублировать список задач (пользователь запускает бота и вводит логин и пароль - они такие же как и для страницы на сайте), затем ему появляется список задач пользователя таких же как на сайте и он может выбрать через сколько боту должен ему напомнить о выбранной задаче и после срока бот пишет уже сам юзеру, что "Привет <имя пользователя в телеграмме>! Не забудь выполнить задачу "..." " Всё на этом 
+Вот мои файлы с проектом на гитхабе, скажи что мне и как подредактировать, какие действия выполнить?https://github.com/Michaeltrexex/lab1/tree/main
+ОТВЕТ
+ Шаг 1: Добавим простую авторизацию (логин и пароль — admin / admin)
+1. Создай файл login.html:
+html
+Копировать
+Редактировать
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Login</title>
+</head>
+<body>
+  <h2 style="text-align:center;">Login</h2>
+  <form method="POST" action="/login" style="text-align:center;">
+    <input type="text" name="username" placeholder="Username" required />
+    <input type="password" name="password" placeholder="Password" required />
+    <button type="submit">Login</button>
+  </form>
+</body>
+</html>
+2. Установи пакет для работы с куками (чтобы хранить сессию):
+bash
+Копировать
+Редактировать
+npm install cookie
+3. Измени index.js:
+В начало добавь:
+js
+Копировать
+Редактировать
+const cookie = require('cookie');
+Измени server.createServer(...), добавив проверку авторизации:
+Вот примерно что нужно вставить перед проверкой if (req.method === 'GET' && parsedUrl.pathname === '/'):
+
+js
+Копировать
+Редактировать
+const cookies = cookie.parse(req.headers.cookie || '');
+const isLoggedIn = cookies.auth === 'admin';
+
+// Показать login.html, если пользователь не авторизован
+if (!isLoggedIn && parsedUrl.pathname !== '/login') {
+  res.writeHead(302, { Location: '/login' });
+  return res.end();
+}
+Добавь обработчик GET /login и POST /login:
+js
+Копировать
+Редактировать
+if (req.method === 'GET' && parsedUrl.pathname === '/login') {
+  const loginPage = fs.readFileSync(path.join(__dirname, 'login.html'));
+  res.writeHead(200, { 'Content-Type': 'text/html' });
+  res.end(loginPage);
+} else if (req.method === 'POST' && parsedUrl.pathname === '/login') {
+  let body = '';
+  req.on('data', chunk => body += chunk);
+  req.on('end', () => {
+    const params = new URLSearchParams(body);
+    const username = params.get('username');
+    const password = params.get('password');
+
+    if (username === 'admin' && password === 'admin') {
+      res.writeHead(302, {
+        'Set-Cookie': cookie.serialize('auth', 'admin', { httpOnly: true }),
+        'Location': '/'
+      });
+      res.end();
+    } else {
+      res.writeHead(401);
+      res.end('Unauthorized');
+    }
+  });
+}
+✅ Шаг 2: Телеграм-бот, который показывает список задач
+Структура:
+На Python, через aiogram.
+
+Бот запрашивает логин и пароль.
+
+После авторизации — показывает задачи.
+
+Позволяет выбрать задачу и через сколько времени напомнить.
+
+Хочешь, я сейчас напишу готовый скрипт для телеграм-бота, исходя из текущей БД (todolist.items)?
+
+Если да, уточни:
+
+База данных MySQL на том же хосте, где бот будет работать?
+
+Достаточно ли для бота читать задачи только для пользователя admin?
+
+Напоминания можно реализовать просто через asyncio.sleep() и bot.send_message(...)?
+
+Если всё ок — я сразу сгенерирую Python-файл с ботом.
+ЗАПРОС
+Твой код про "Добавь обработчик GET /login и POST /login:" - это надо добавить тоже до if (req.method === 'GET' && parsedUrl.pathname === '/'): ?
+ОТВЕТ
+Хороший вопрос — да, всё это должно быть ДО блока:
+
+js
+Копировать
+Редактировать
+if (req.method === 'GET' && parsedUrl.pathname === '/')
+📌 Почему:
+Обработчики GET /login и POST /login должны отрабатывать до того, как ты проверяешь доступ к / и другим маршрутам. Это логично: сначала проверяем, хочет ли пользователь войти или отправил логин/пароль — и только если нет, проверяем остальные маршруты.
+
+✅ Правильный порядок в server.createServer(async (req, res) => { ... }):
+js
+Копировать
+Редактировать
+const cookies = cookie.parse(req.headers.cookie || '');
+const isLoggedIn = cookies.auth === 'admin';
+
+if (req.method === 'GET' && parsedUrl.pathname === '/login') {
+  const loginPage = fs.readFileSync(path.join(__dirname, 'login.html'));
+  res.writeHead(200, { 'Content-Type': 'text/html' });
+  res.end(loginPage);
+  return;
+}
+
+if (req.method === 'POST' && parsedUrl.pathname === '/login') {
+  let body = '';
+  req.on('data', chunk => body += chunk);
+  req.on('end', () => {
+    const params = new URLSearchParams(body);
+    const username = params.get('username');
+    const password = params.get('password');
+
+    if (username === 'admin' && password === 'admin') {
+      res.writeHead(302, {
+        'Set-Cookie': cookie.serialize('auth', 'admin', { httpOnly: true }),
+        'Location': '/'
+      });
+      res.end();
+    } else {
+      res.writeHead(401);
+      res.end('Unauthorized');
+    }
+  });
+  return;
+}
+
+// 🔐 Всё, что ниже — только если авторизован
+if (!isLoggedIn) {
+  res.writeHead(302, { Location: '/login' });
+  return res.end();
+}
+
+// Дальше обычная логика:
+if (req.method === 'GET' && parsedUrl.pathname === '/') {
+  ...
+}
+ЗАПРОС
+База данных MySQL на том же хосте, где бот будет работать? - Да
+Достаточно ли для бота читать задачи только для пользователя admin? - Да, по скольку я делаю авторизацию только для admin, то и бот спрашивает авторизацию для этого юзера (это домашнее задание и оно должно быть сделано просто чтобы показать функционал)
+Напоминания можно реализовать просто через asyncio.sleep() и bot.send_message(...)? - Да можно .подредактируй код, чтоб задачи в боте были столбиком (по одной задаче на строчку)
+ОТВЕТ
+import asyncio
+import logging
+import mysql.connector
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton
+from aiogram.filters import CommandStart
+from aiogram.enums import ParseMode
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram import F
+
+API_TOKEN = '7263777659:AAEoCu2MsnJDkGQDZPk3VHNoywf5Hu6Hoyg'
+
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+
+sessions = {}
+
+def get_tasks():
+    conn = mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='root12',
+        database='todolist'
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, text FROM items")
+    tasks = cursor.fetchall()
+    conn.close()
+    return tasks
+
+@dp.message(CommandStart())
+async def start(message: types.Message):
+    await message.answer("Введите логин:")
+    sessions[message.chat.id] = {"step": "login"}
+
+@dp.message(F.text)
+async def handle_auth_and_logic(message: types.Message):
+    chat_id = message.chat.id
+    session = sessions.get(chat_id, {})
+
+    if session.get("step") == "login":
+        session["login"] = message.text.strip()
+        session["step"] = "password"
+        await message.answer("Введите пароль:")
+        return
+
+    if session.get("step") == "password":
+        session["password"] = message.text.strip()
+        if session["login"] == "admin" and session["password"] == "admin":
+            session["authenticated"] = True
+            session["step"] = "choose_task"
+            tasks = get_tasks()
+            session["tasks"] = tasks
+
+            builder = InlineKeyboardBuilder()
+            for task_id, text in tasks:
+                builder.button(text=text, callback_data=str(task_id))
+            builder.adjust(1)  # Каждая кнопка на новой строке
+            await message.answer("Выберите задачу для напоминания:", reply_markup=builder.as_markup())
+        else:
+            await message.answer("Неверный логин или пароль. Попробуйте снова: /start")
+            sessions.pop(chat_id, None)
+        return
+
+@dp.callback_query()
+async def task_chosen(callback: types.CallbackQuery):
+    chat_id = callback.message.chat.id
+    session = sessions.get(chat_id, {})
+
+    task_id = int(callback.data)
+    task_text = next((t[1] for t in session.get("tasks", []) if t[0] == task_id), None)
+
+    if not task_text:
+        await callback.message.answer("Задача не найдена.")
+        return
+
+    session["selected_task"] = task_text
+    session["step"] = "enter_delay"
+    await callback.message.answer(f"Через сколько минут напомнить о задаче:\n<b>{task_text}</b>?", parse_mode=ParseMode.HTML)
+
+@dp.message(F.text.regexp(r'^\d+$'))
+async def handle_delay(message: types.Message):
+    chat_id = message.chat.id
+    session = sessions.get(chat_id, {})
+    if session.get("step") != "enter_delay":
+        return
+
+    minutes = int(message.text)
+    task = session.get("selected_task")
+
+    await message.answer(f"Ок! Напомню через {minutes} минут о задаче:\n<b>{task}</b>", parse_mode=ParseMode.HTML)
+
+    # Сразу вернём пользователя к выбору задач
+    session["step"] = "choose_task"
+    tasks = get_tasks()
+    session["tasks"] = tasks
+
+    builder = InlineKeyboardBuilder()
+    for task_id, text in tasks:
+        builder.button(text=text, callback_data=str(task_id))
+    builder.adjust(1)
+    await message.answer("Выбери следующую задачу или /start для новой сессии:", reply_markup=builder.as_markup())
+
+    # Запуск отдельной задачи без блокировки
+    async def reminder():
+        await asyncio.sleep(minutes * 60)
+        await bot.send_message(chat_id, f"🔔 Напоминание!\n<b>{task}</b>", parse_mode=ParseMode.HTML)
+
+    asyncio.create_task(reminder())
+
+if __name__ == '__main__':
+    asyncio.run(dp.start_polling(bot))
+🔧 Что изменилось
+builder.adjust(1) добавлено там, где создаются инлайн-кнопки — чтобы каждая кнопка шла на новой строке.
+
+asyncio.create_task() используется, чтобы напоминание запускалось фоново и бот продолжал работать.
+
+send_message(...) теперь используется для напоминаний, как ты просил (а не reply).
+
+Если хочешь — могу отдельно прислать минимальную тестовую базу и команду создания таблицы для проверки.
+ЗАПРОС
+Исправь этот код
+Чтобы названия задач были столбцом (по одной задаче на строчке)
+import asyncio
+import logging
+import mysql.connector
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import CommandStart
+from aiogram.enums import ParseMode
+from aiogram import F
+
+API_TOKEN = '7263777659:AAEoCu2MsnJDkGQDZPk3VHNoywf5Hu6Hoyg'
+
+# Логгирование
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+
+# Простое хранилище сессий
+sessions = {}
+
+# Подключение к базе
+def get_tasks():
+    conn = mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='root12',
+        database='todolist'
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, text FROM items")
+    tasks = cursor.fetchall()
+    conn.close()
+    return tasks
+
+# Напоминалка (фоновая)
+async def remind_later(chat_id, task, delay_seconds, user_name):
+    await asyncio.sleep(delay_seconds)
+    await bot.send_message(
+        chat_id,
+        f"🔔 Напоминание, {user_name}!\nНе забудь: <b>{task}</b>",
+        parse_mode=ParseMode.HTML
+    )
+
+# /start
+@dp.message(CommandStart())
+async def start(message: types.Message):
+    sessions[message.chat.id] = {"step": "login"}
+    await message.answer("Введите логин:")
+
+# Авторизация и логика
+@dp.message(F.text)
+async def handle_auth_and_logic(message: types.Message):
+    chat_id = message.chat.id
+    session = sessions.get(chat_id, {})
+
+    if session.get("step") == "login":
+        session["login"] = message.text.strip()
+        session["step"] = "password"
+        await message.answer("Введите пароль:")
+        return
+
+    if session.get("step") == "password":
+        session["password"] = message.text.strip()
+        if session["login"] == "admin" and session["password"] == "admin":
+            session["authenticated"] = True
+            session["step"] = "choose_task"
+            tasks = get_tasks()
+            session["tasks"] = tasks
+
+            from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+            builder = InlineKeyboardBuilder()
+            for task_id, text in tasks:
+                builder.button(text=text, callback_data=str(task_id))
+            await message.answer("Выберите задачу:", reply_markup=builder.as_markup())
+
+        else:
+            await message.answer("Неверный логин или пароль. Попробуйте снова: /start")
+            sessions.pop(chat_id, None)
+        return
+
+    if session.get("step") == "enter_delay" and message.text.isdigit():
+        minutes = int(message.text)
+        task = session.get("selected_task")
+        user_name = message.from_user.first_name or "пользователь"
+        await message.answer(
+            f"✅ Напоминание будет через {minutes} мин. о задаче:\n<b>{task}</b>",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Назначаем напоминание
+        asyncio.create_task(remind_later(chat_id, task, minutes * 60, user_name))
+
+        # Сразу возвращаем к выбору задач
+        session["step"] = "choose_task"
+        tasks = get_tasks()
+        session["tasks"] = tasks
+
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+        builder = InlineKeyboardBuilder()
+        for task_id, text in tasks:
+            builder.button(text=text, callback_data=str(task_id))
+        await message.answer("Выберите задачу:", reply_markup=builder.as_markup())
+
+
+# Выбор задачи
+@dp.callback_query()
+async def task_chosen(callback: types.CallbackQuery):
+    chat_id = callback.message.chat.id
+    session = sessions.get(chat_id, {})
+
+    task_id = int(callback.data)
+    task_text = next((t[1] for t in session.get("tasks", []) if t[0] == task_id), None)
+
+    if not task_text:
+        await callback.message.answer("Задача не найдена.")
+        return
+
+    session["selected_task"] = task_text
+    session["step"] = "enter_delay"
+    await callback.message.answer(
+        f"Через сколько минут напомнить о задаче:\n<b>{task_text}</b>?",
+        parse_mode=ParseMode.HTML
+    )
+
+# Запуск
+if __name__ == '__main__':
+    asyncio.run(dp.start_polling(bot))
+ОТВЕТ
+Вот исправленный код, в котором задачи отображаются в столбик — каждая кнопка на отдельной строке.
+
+Основное изменение: добавлен .adjust(1) при создании InlineKeyboardBuilder, чтобы расположить кнопки вертикально.
+
+✅ Исправленный bot.py:
+python
+Копировать
+Редактировать
+import asyncio
+import logging
+import mysql.connector
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.filters import CommandStart
+from aiogram.enums import ParseMode
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+API_TOKEN = '7263777659:AAEoCu2MsnJDkGQDZPk3VHNoywf5Hu6Hoyg'
+
+# Логгирование
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
+
+# Простое хранилище сессий
+sessions = {}
+
+# Подключение к базе
+def get_tasks():
+    conn = mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='root12',
+        database='todolist'
+    )
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, text FROM items")
+    tasks = cursor.fetchall()
+    conn.close()
+    return tasks
+
+# Напоминалка (фоновая)
+async def remind_later(chat_id, task, delay_seconds, user_name):
+    await asyncio.sleep(delay_seconds)
+    await bot.send_message(
+        chat_id,
+        f"🔔 Напоминание, {user_name}!\nНе забудь: <b>{task}</b>",
+        parse_mode=ParseMode.HTML
+    )
+
+# /start
+@dp.message(CommandStart())
+async def start(message: types.Message):
+    sessions[message.chat.id] = {"step": "login"}
+    await message.answer("Введите логин:")
+
+# Авторизация и логика
+@dp.message(F.text)
+async def handle_auth_and_logic(message: types.Message):
+    chat_id = message.chat.id
+    session = sessions.get(chat_id, {})
+
+    if session.get("step") == "login":
+        session["login"] = message.text.strip()
+        session["step"] = "password"
+        await message.answer("Введите пароль:")
+        return
+
+    if session.get("step") == "password":
+        session["password"] = message.text.strip()
+        if session["login"] == "admin" and session["password"] == "admin":
+            session["authenticated"] = True
+            session["step"] = "choose_task"
+            tasks = get_tasks()
+            session["tasks"] = tasks
+
+            builder = InlineKeyboardBuilder()
+            for task_id, text in tasks:
+                builder.button(text=text, callback_data=str(task_id))
+            builder.adjust(1)  # ОДНА КНОПКА В РЯДУ (в столбик)
+
+            await message.answer("Выберите задачу:", reply_markup=builder.as_markup())
+
+        else:
+            await message.answer("Неверный логин или пароль. Попробуйте снова: /start")
+            sessions.pop(chat_id, None)
+        return
+
+    if session.get("step") == "enter_delay" and message.text.isdigit():
+        minutes = int(message.text)
+        task = session.get("selected_task")
+        user_name = message.from_user.first_name or "пользователь"
+        await message.answer(
+            f"✅ Напоминание будет через {minutes} мин. о задаче:\n<b>{task}</b>",
+            parse_mode=ParseMode.HTML
+        )
+
+        # Назначаем напоминание
+        asyncio.create_task(remind_later(chat_id, task, minutes * 60, user_name))
+
+        # Сразу возвращаем к выбору задач
+        session["step"] = "choose_task"
+        tasks = get_tasks()
+        session["tasks"] = tasks
+
+        builder = InlineKeyboardBuilder()
+        for task_id, text in tasks:
+            builder.button(text=text, callback_data=str(task_id))
+        builder.adjust(1)  # Кнопки в столбик
+        await message.answer("Выберите задачу:", reply_markup=builder.as_markup())
+
+# Выбор задачи
+@dp.callback_query()
+async def task_chosen(callback: types.CallbackQuery):
+    chat_id = callback.message.chat.id
+    session = sessions.get(chat_id, {})
+
+    task_id = int(callback.data)
+    task_text = next((t[1] for t in session.get("tasks", []) if t[0] == task_id), None)
+
+    if not task_text:
+        await callback.message.answer("Задача не найдена.")
+        return
+
+    session["selected_task"] = task_text
+    session["step"] = "enter_delay"
+    await callback.message.answer(
+        f"Через сколько минут напомнить о задаче:\n<b>{task_text}</b>?",
+        parse_mode=ParseMode.HTML
+    )
+
+# Запуск
+if __name__ == '__main__':
+    asyncio.run(dp.start_polling(bot))
